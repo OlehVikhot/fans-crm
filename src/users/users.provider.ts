@@ -1,8 +1,9 @@
 import { User } from './user.entity';
+import { USERS_REPOSITORY } from '../database/constants';
 
 export const usersProviders = [
   {
-    provide: 'CATS_REPOSITORY',
+    provide: USERS_REPOSITORY,
     useValue: User,
   },
 ];

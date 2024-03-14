@@ -1,33 +1,24 @@
 import * as argon from 'argon2';
 import { Response } from 'express';
 import {
-  BadRequestException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import {
-  CheckEmailDto,
-  GoogleLoginDto,
-  resetPasswordDto,
-  setNewPasswordDto,
-  SignInDto,
-  SignUpDto,
-} from './dto';
-import { PrismaService } from '../prisma/prisma.service';
-import { EmailService } from '../email/email.service';
-import { TokenType } from '@prisma/client';
-import { setup } from '../setup';
-import { EmailTypes } from '../email/emailTypes';
-import { connect } from 'rxjs';
+import { SignInDto, SignUpDto } from './dto';
+import { USERS_REPOSITORY } from '../database/constants';
+import { User } from '../users/user.entity';
+import { setup } from '../../setup';
 
 @Injectable()
 export class AuthService {
   constructor(
-    private prisma: PrismaService,
+    @Inject(USERS_REPOSITORY)
+    private usersRepository: typeof User,
     private jwt: JwtService,
     private configService: ConfigService,
   ) {}
@@ -35,7 +26,7 @@ export class AuthService {
   async signup(dto: SignUpDto) {
     const hash = await argon.hash(dto.password);
 
-    const user = await this.prisma.user.findUnique({
+    const user = await this.usersRepository.findOne({
       where: { email: dto.email.toLowerCase() },
     });
 
@@ -43,18 +34,16 @@ export class AuthService {
       throw new ForbiddenException('Credentials taken');
     }
 
-    const newUser = await this.prisma.user.create({
-      data: {
-        email: dto.email.toLowerCase(),
-        password: hash,
-      },
+    const newUser = await this.usersRepository.create({
+      email: dto.email.toLowerCase(),
+      password: hash,
     });
 
     return this.signToken(newUser.id, newUser.email);
   }
 
   async signin(dto: SignInDto) {
-    const user = await this.prisma.user.findUnique({
+    const user = await this.usersRepository.findOne({
       where: {
         email: dto.email.toLowerCase(),
       },
@@ -87,7 +76,7 @@ export class AuthService {
     };
     const secret = this.configService.get('JWT_SECRET');
     const token = await this.jwt.signAsync(payload, {
-      expiresIn: '30d',
+      expiresIn: setup.accessTokenLifetime,
       secret,
     });
     return {
@@ -96,11 +85,12 @@ export class AuthService {
   }
 
   setAccessTokenCookie(res: Response, access_token: string) {
+    const expires = new Date(Date.now() + setup.accessTokenLifetime);
     res.cookie('access_token', access_token, {
       httpOnly: true,
       secure: true,
       sameSite: 'none',
-      expires: new Date(Date.now() + setup.accessTokenLifetime),
+      expires,
     });
   }
 
